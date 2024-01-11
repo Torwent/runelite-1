@@ -24,14 +24,19 @@
  */
 package net.runelite.cache.models;
 
+import java.awt.Color;
 import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import net.runelite.cache.TextureManager;
 import net.runelite.cache.definitions.ModelDefinition;
 import net.runelite.cache.definitions.TextureDefinition;
 
 public class ObjExporter
 {
-	private static final double BRIGHTNESS = JagexColor.BRIGHTNESS_MIN;
+	private static final double BRIGHTNESS = JagexColor.BRIGHTNESS_MAX;
 
 	private final TextureManager textureManager;
 	private final ModelDefinition model;
@@ -54,8 +59,8 @@ public class ObjExporter
 		for (int i = 0; i < model.vertexCount; ++i)
 		{
 			objWriter.println("v " + model.vertexX[i] + " "
-				+ model.vertexY[i] * -1 + " "
-				+ model.vertexZ[i] * -1);
+					+ model.vertexY[i] * -1 + " "
+					+ model.vertexZ[i] * -1);
 		}
 
 		if (model.faceTextures != null)
@@ -86,9 +91,9 @@ public class ObjExporter
 			if (model.faceTextures != null)
 			{
 				objWriter.println("f "
-					+ x + "/" + (i * 3 + 1) + " "
-					+ y + "/" + (i * 3 + 2) + " "
-					+ z + "/" + (i * 3 + 3));
+						+ x + "/" + (i * 3 + 1) + " "
+						+ y + "/" + (i * 3 + 2) + " "
+						+ z + "/" + (i * 3 + 3));
 
 			}
 			else
@@ -112,7 +117,7 @@ public class ObjExporter
 
 			if (textureId == -1)
 			{
-				int rgb = JagexColor.HSLtoRGB( model.faceColors[i], BRIGHTNESS);
+				int rgb = JagexColor.HSLtoRGB(model.faceColors[i], BRIGHTNESS);
 				double r = ((rgb >> 16) & 0xff) / 255.0;
 				double g = ((rgb >> 8) & 0xff) / 255.0;
 				double b = (rgb & 0xff) / 255.0;
@@ -139,5 +144,46 @@ public class ObjExporter
 				mtlWriter.println("d " + (alpha / 255.0));
 			}
 		}
+	}
+
+	public int getSimbaHeight()
+	{
+		int height = 0;
+		for (int i = 0; i < model.getVertexY().length; i++) {
+			int current = model.getVertexY()[i] * -1;
+			if (current > height) height = current;
+		}
+		return height;
+	}
+
+	public List<Integer> getSimbaColors(){
+		List<Integer> colors = new ArrayList<>();
+		List<Integer> knownTextures = new ArrayList<>();
+		List<Short> knownHSL = new ArrayList<>();
+		for (int i = 0; i < model.getFaceCount(); ++i)
+		{
+			// determine face color (textured or colored?)
+			int textureId = -1;
+			if (model.getFaceTextures() != null) textureId = model.getFaceTextures()[i];
+
+			int rgbColor;
+			if (textureId != -1)
+			{
+				if (knownTextures.contains(textureId)) continue;
+				TextureDefinition texture = textureManager.findTexture((textureId));
+				rgbColor = JagexColor.adjustForBrightness(texture.field1777, JagexColor.BRIGHTNESS_MAX);
+				knownTextures.add(textureId);
+			}
+			else
+			{
+				if (knownHSL.contains(model.faceColors[i])) continue;
+				rgbColor = JagexColor.HSLtoRGB(model.faceColors[i], JagexColor.BRIGHTNESS_MAX);
+				knownHSL.add(model.faceColors[i]);
+			}
+
+			int bgr = JagexColor.RGBtoBGR(rgbColor);
+			if (!colors.contains(bgr)) colors.add(bgr);
+		}
+		return colors;
 	}
 }

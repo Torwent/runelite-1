@@ -24,14 +24,6 @@
  */
 package net.runelite.cache;
 
-import java.awt.image.BufferedImage;
-import java.io.*;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
-
 import net.runelite.cache.definitions.ItemDefinition;
 import net.runelite.cache.definitions.ModelDefinition;
 import net.runelite.cache.definitions.loaders.ModelLoader;
@@ -40,26 +32,27 @@ import net.runelite.cache.fs.Archive;
 import net.runelite.cache.fs.Index;
 import net.runelite.cache.fs.Store;
 import net.runelite.cache.item.ItemSpriteFactory;
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
+import net.runelite.cache.region.Region;
+import net.runelite.cache.util.XteaKeyManager;
+import org.apache.commons.cli.*;
 
 import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.*;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
-public class Cache
+public class SimbaCacheDumper
 {
 	public static void main(String[] args) throws IOException
 	{
 		Options options = new Options();
 
-		options.addOption("c", "cache", true, "cache base");
-
-		options.addOption(null, "items", true, "directory to dump items to");
-		options.addOption(null, "npcs", true, "directory to dump npcs to");
-		options.addOption(null, "objects", true, "directory to dump objects to");
-		options.addOption(null, "sprites", true, "directory to dump sprites to");
+		options.addOption(Option.builder("c").longOpt("cachedir").hasArg().required().build());
+		options.addOption(Option.builder("n").longOpt("cachename").hasArg().required().build());
+		options.addOption(Option.builder("o").longOpt("outputdir").hasArg().required().build());
 
 		CommandLineParser parser = new DefaultParser();
 		CommandLine cmd;
@@ -74,66 +67,29 @@ public class Cache
 			return;
 		}
 
-		String cache = cmd.getOptionValue("cache");
+		final String mainDir = cmd.getOptionValue("cachedir");
+		final String cacheName = cmd.getOptionValue("cachename");
 
-		Store store = loadStore(cache);
+		final String cacheDirectory = mainDir + File.separator + cacheName + File.separator + "cache";
+		final String xteaJSONPath = mainDir + File.separator + cacheName + File.separator + cacheName.replace("cache-", "keys-") + ".json";
 
-		if (cmd.hasOption("items"))
+		final String outputDirectory = cmd.getOptionValue("outputdir") + File.separator + cacheName;
+
+		XteaKeyManager xteaKeyManager = new XteaKeyManager();
+		try (FileInputStream fin = new FileInputStream(xteaJSONPath))
 		{
-			String itemdir = cmd.getOptionValue("items");
-
-			if (itemdir == null)
-			{
-				System.err.println("Item directory must be specified");
-				return;
-			}
-
-			System.out.println("Dumping items to " + itemdir);
-			dumpItems(store, new File(itemdir));
+			xteaKeyManager.loadKeys(fin);
 		}
-		else if (cmd.hasOption("npcs"))
-		{
-			String npcdir = cmd.getOptionValue("npcs");
 
-			if (npcdir == null)
-			{
-				System.err.println("NPC directory must be specified");
-				return;
-			}
+		File outDir = new File(outputDirectory);
+		if (!outDir.mkdirs()) throw new RuntimeException("Failed to create output path: " + outDir.getPath());
 
-			System.out.println("Dumping npcs to " + npcdir);
-			dumpNpcs(store, new File(npcdir));
-		}
-		else if (cmd.hasOption("objects"))
-		{
-			String objectdir = cmd.getOptionValue("objects");
+		Store store = loadStore(cacheDirectory);
 
-			if (objectdir == null)
-			{
-				System.err.println("Object directory must be specified");
-				return;
-			}
-
-			System.out.println("Dumping objects to " + objectdir);
-			dumpObjects(store, new File(objectdir));
-		}
-		else if (cmd.hasOption("sprites"))
-		{
-			String spritedir = cmd.getOptionValue("sprites");
-
-			if (spritedir == null)
-			{
-				System.err.println("Sprite directory must be specified");
-				return;
-			}
-
-			System.out.println("Dumping sprites to " + spritedir);
-			dumpSprites(store, new File(spritedir));
-		}
-		else
-		{
-			System.err.println("Nothing to do");
-		}
+		dumpMap(store, outDir, xteaKeyManager);
+		dumpCollision(store, outDir, xteaKeyManager);
+		dumpHeight(store, outDir, xteaKeyManager);
+		dumpObjects(store, outDir, xteaKeyManager);
 	}
 
 	private static Store loadStore(String cache) throws IOException
@@ -143,35 +99,52 @@ public class Cache
 		return store;
 	}
 
-	private static void dumpItems(Store store, File itemdir) throws IOException
+	private static void dumpMap(Store store, File outDir, XteaKeyManager xteaKeyManager) throws IOException
 	{
-		ItemManager dumper = new ItemManager(store);
+		System.out.println("Dumping map images in map.zip");
+		SimbaMapImageDumper.exportFullMap = false;
+		SimbaMapImageDumper dumper = new SimbaMapImageDumper(store, xteaKeyManager);
 		dumper.load();
-		dumper.export(itemdir);
-		dumper.java(itemdir);
+
+		ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(outDir, "map.zip"))));
+		for (int i = 0; i < Region.Z; ++i) dumper.drawRegions(i, zip);
+		zip.close();
 	}
 
-	private static void dumpNpcs(Store store, File npcdir) throws IOException
+	private static void dumpCollision(Store store, File outDir, XteaKeyManager xteaKeyManager) throws IOException
 	{
-		NpcManager dumper = new NpcManager(store);
+		System.out.println("Dumping map images in collision.zip");
+		SimbaCollisionMapDumper.exportFullMap = false;
+		SimbaCollisionMapDumper dumper = new SimbaCollisionMapDumper(store, xteaKeyManager);
 		dumper.load();
-		dumper.dump(npcdir);
-		dumper.java(npcdir);
+
+		ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(outDir, "collision.zip"))));
+		for (int i = 0; i < Region.Z; ++i) dumper.drawRegions(i, zip);
+		zip.close();
 	}
 
-	private static void dumpObjects(Store store, File objectdir) throws IOException
+	private static void dumpHeight(Store store, File outDir, XteaKeyManager xteaKeyManager) throws IOException
 	{
-		ObjectManager dumper = new ObjectManager(store);
-		dumper.load();
-		dumper.dump(objectdir);
-		dumper.java(objectdir);
+		System.out.println("Dumping map images in heightmap.zip");
+		SimbaHeightMapDumper.exportFullMap = false;
+		SimbaHeightMapDumper dumper = new SimbaHeightMapDumper(store);
+		dumper.load(xteaKeyManager);
+
+		ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(outDir, "heightmap.zip"))));
+		dumper.drawRegions(0, zip);
+		zip.close();
 	}
 
-	private static void dumpSprites(Store store, File spritedir) throws IOException
+	private static void dumpObjects(Store store, File outDir, XteaKeyManager xteaKeyManager) throws IOException
 	{
-		SpriteManager dumper = new SpriteManager(store);
+		System.out.println("Dumping map images in objects.zip");
+		SimbaObjectInfoDumper.exportFullMap = false;
+		SimbaObjectInfoDumper dumper = new SimbaObjectInfoDumper(store, xteaKeyManager);
 		dumper.load();
-		dumper.export(spritedir);
+
+		ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(new File(outDir, "objects.zip"))));
+		for (int i = 0; i < Region.Z; ++i) dumper.mapRegions(i, zip);
+		zip.close();
 	}
 
 	private static MessageDigest md5;
@@ -184,7 +157,7 @@ public class Cache
 		return md5.digest();
 	}
 
-	private static void dumpItemImage(ItemManager itemManager, ModelProvider modelProvider, SpriteManager spriteManager, TextureManager textureManager, Integer id, String name, ZipOutputStream zipper, FileWriter itemFile, ArrayList<byte[]> hashes, ArrayList<String> names) throws IOException, NoSuchAlgorithmException {
+	private static void dumpItemImage(ItemManager itemManager, ModelProvider modelProvider, SpriteManager spriteManager, TextureManager textureManager, Integer id, String name, ZipOutputStream zipper, FileWriter itemFile, ArrayList<byte[]> hashes, ArrayList<String> names) throws IOException {
 
 		BufferedImage img = ItemSpriteFactory.createSprite(itemManager, modelProvider, spriteManager, textureManager, id, 1, 1, 3153952, false);
 		byte[] hash = hashImage(img);
@@ -198,11 +171,7 @@ public class Cache
 		hashes.add(hash);
 		names.add(name);
 
-		try {
-			zipper.putNextEntry(new ZipEntry(id + ".png"));
-		} catch (Exception ex) {
-			return;
-		}
+		zipper.putNextEntry(new ZipEntry(id + ".png"));
 
 		ImageIO.write(img, "png", zipper);
 		itemFile.write(name + "=" + id + System.lineSeparator());
