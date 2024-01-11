@@ -24,9 +24,11 @@
  */
 package net.runelite.cache.models;
 
+import java.awt.*;
+
 public final class JagexColor
 {
-	public static final double BRIGHTNESS_MAX = .6;
+	public static final double BRIGHTNESS_MAX = .5;
 	public static final double BRIGHTNESS_HIGH = .7;
 	public static final double BRIGHTNESS_LOW = .8;
 	public static final double BRIGHTNESS_MIN = .9;
@@ -45,14 +47,6 @@ public final class JagexColor
 			| (short) (luminance & 127));
 	}
 
-	public static int packHSLFull(int hue, int saturation, int luminance)
-	{
-		return (hue & 0xFF) << 16
-			| (saturation & 0xFF) << 8
-			| (luminance & 0xFF);
-
-	}
-
 	public static int unpackHue(short hsl)
 	{
 		return hsl >> 10 & 63;
@@ -66,21 +60,6 @@ public final class JagexColor
 	public static int unpackLuminance(short hsl)
 	{
 		return hsl & 127;
-	}
-
-	public static int unpackHueFull(int hsl)
-	{
-		return (hsl >> 16 & 0xFF);
-	}
-
-	public static int unpackSaturationFull(int hsl)
-	{
-		return (hsl >> 8 & 0xFF);
-	}
-
-	public static int unpackLuminanceFull(int hsl)
-	{
-		return (hsl & 0xFF);
 	}
 
 	public static String formatHSL(short hsl)
@@ -142,58 +121,6 @@ public final class JagexColor
 		return rgb;
 	}
 
-	public static int HSLtoRGBFull(int hsl)
-	{
-		double hue = (double) unpackHueFull(hsl) / 256.D;
-		double saturation = (double) unpackSaturationFull(hsl) / 256.D;
-		double luminance = (double) unpackLuminanceFull(hsl) / 256.D;
-
-		// This is just a standard hsl to rgb transform
-		// the only difference is the offsets above and the brightness transform below
-		double chroma = (1.D - Math.abs((2.D * luminance) - 1.D)) * saturation;
-		double x = chroma * (1 - Math.abs(((hue * 6.D) % 2.D) - 1.D));
-		double lightness = luminance - (chroma / 2);
-
-		double r = lightness, g = lightness, b = lightness;
-		switch ((int) (hue * 6.D))
-		{
-			case 0:
-				r += chroma;
-				g += x;
-				break;
-			case 1:
-				g += chroma;
-				r += x;
-				break;
-			case 2:
-				g += chroma;
-				b += x;
-				break;
-			case 3:
-				b += chroma;
-				g += x;
-				break;
-			case 4:
-				b += chroma;
-				r += x;
-				break;
-			default:
-				r += chroma;
-				b += x;
-				break;
-		}
-
-		int rgb = ((((int) (r * 256.0D)) & 255) << 16)
-			| ((((int) (g * 256.0D)) & 255) << 8)
-			| ((int) (b * 256.0D)) & 255;
-
-		if (rgb == 0)
-		{
-			rgb = 1;
-		}
-		return rgb;
-	}
-
 	public static int adjustForBrightness(int rgb, double brightness)
 	{
 		double r = (double) (rgb >> 16) / 256.0D;
@@ -219,8 +146,14 @@ public final class JagexColor
 		return colorPalette;
 	}
 
-	public static int getRGBFull(int hsl)
-	{
-		return HSLtoRGBFull(hsl);
+	public static int RGBtoBGR(int rgb){
+		int r = (rgb >> 16) & 0xff;
+		int g = (rgb >> 8) & 0xff;
+		int b = rgb & 0xff;
+
+		int bgr = b;
+		bgr = (bgr << 8) + g;
+		bgr = (bgr << 8) + r;
+		return bgr;
 	}
 }
