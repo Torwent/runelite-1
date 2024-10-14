@@ -600,6 +600,8 @@ public class SimbaCollisionMapDumper
 		obstacles.add(3931); //log balance
 		obstacles.add(3933); //log balance
 		obstacles.add(23542); //log balance
+		
+		Obstacles.add(31849); //observatory rope
 
 
 		for (int localX = 0; localX < Region.X; localX++)
